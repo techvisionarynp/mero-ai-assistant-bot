@@ -8,7 +8,7 @@ app = FastAPI()
 BOT_TOKEN = "8424346441:AAF7YxEtUeKvuNZ_nqGpEG2XVCwhhXBqFxU"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 PERPLEXITY_API = "https://perplex-city.vercel.app/search"
-CHATGPT_API = "https://chatgpt-4-hridoy.vercel.app/?question="
+CHATGPT_API = "https://chat-gpt-six-tan.vercel.app/chat?text="
 GEMINI_IMAGE_API = "https://gemini-image-generator-api.vercel.app/?prompt="
 
 async def send_message(chat_id: int, text: str, parse_mode: str = "Markdown"):
@@ -131,8 +131,8 @@ async def webhook(request: Request):
         msg_id = thinking["result"]["message_id"]
         try:
             result = await ask_chatgpt(query)
-            if result and "result" in result:
-                ai_response = result["result"]
+            if result and "message" in result:
+                ai_response = result["message"]
                 await edit_message(chat_id, msg_id, ai_response)
             else:
                 await edit_message(chat_id, msg_id, "Error fetching response from ChatGPT API.")
