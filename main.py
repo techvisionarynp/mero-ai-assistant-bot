@@ -7,8 +7,8 @@ app = FastAPI()
 
 BOT_TOKEN = "8424346441:AAF7YxEtUeKvuNZ_nqGpEG2XVCwhhXBqFxU"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-PERPLEXITY_API = "https://perplex-city.vercel.app/search"
-CHATGPT_API = "https://text.pollinations.ai/"  # changed endpoint base
+FELO_AI_API = "https://yabes-api.pages.dev/api/ai/chat/felo-ai?query="
+CHATGPT_API = "https://text.pollinations.ai/"
 GEMINI_IMAGE_API = "https://gemini-image-generator-api.vercel.app/?prompt="
 
 async def send_message(chat_id: int, text: str, parse_mode: str = "Markdown"):
@@ -27,26 +27,26 @@ async def send_photo(chat_id: int, photo_url: str, caption: str = None):
         response = await client.post(url, data=data)
         return response.json()
 
-async def edit_message(chat_id: int, message_id: int, text: str, parse_mode: str = "Markdown"):
-    url = f"{TELEGRAM_API}/editMessageText"
-    data = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": parse_mode
-    }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=data)
-        return response.json()
-
-async def search_perplexity(query: str):
+async def search_felo_ai(query: str):
     encoded_query = urllib.parse.quote(query)
-    url = f"{PERPLEXITY_API}?message={encoded_query}"
+    url = f"{FELO_AI_API}{encoded_query}"
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(url)
         if response.status_code == 200:
-            return response.json()
-        return None
+            data = response.json()
+            results_text = data.get('results', '')
+
+            if "📚 References:" in results_text:
+                news_part, references_part = results_text.split("📚 References:")
+                news_part = news_part.strip()
+                references_part = references_part.strip().split("\n- ")
+                references_part = [ref.strip("- ").strip() for ref in references_part if ref.strip()]
+            else:
+                news_part = results_text
+                references_part = []
+
+            return news_part, references_part
+        return None, None
 
 async def ask_chatgpt(query: str):
     encoded_query = urllib.parse.quote(query)
@@ -81,7 +81,7 @@ async def webhook(request: Request):
                 "👋 Welcome to *Mero AI Assistant!*\n\n"
                 "You can:\n"
                 "• Ask anything normally (ChatGPT powered)\n"
-                "• Use /search <query> for Perplexity AI search\n"
+                "• Use /search <query> for Felo AI search\n"
                 "• Use /imagine <prompt> to generate AI images\n\n"
                 "Let's get started!"
             )
@@ -94,22 +94,29 @@ async def webhook(request: Request):
                 if not query:
                     await send_message(chat_id, "Please provide something to search.")
                     return JSONResponse({"ok": True})
-                searching = await send_message(chat_id, "🔍 Searching... Please wait.")
-                if not searching.get("ok"):
-                    return JSONResponse({"ok": True})
-                msg_id = searching["result"]["message_id"]
+
+                await send_message(chat_id, "🔍 Searching... Please wait.")
+
                 try:
-                    result = await search_perplexity(query)
-                    if result and result.get("status_code") == 200:
-                        ai_response = result.get("response", "No response available.")
-                        await edit_message(chat_id, msg_id, ai_response)
+                    news, references = await search_felo_ai(query)
+                    if news:
+                        refs_text = ""
+                        for i, ref in enumerate(references):
+                            if ref.startswith("http://") or ref.startswith("https://"):
+                                refs_text += f"{i+1}. [Reference]({ref})\n"
+                            else:
+                                refs_text += f"{i+1}. {ref}\n"
+                        final_text = f"{news}"
+                        if references:
+                            final_text += f"\n\nReferences:\n{refs_text.strip()}"
+                        await send_message(chat_id, final_text)
                     else:
-                        error_msg = result.get("message", "Unable to get answer") if result else "API error"
-                        await edit_message(chat_id, msg_id, f"Error: {error_msg}")
+                        await send_message(chat_id, "Error: Unable to fetch news from Felo AI.")
                 except httpx.TimeoutException:
-                    await edit_message(chat_id, msg_id, "Request timeout. Please try again.")
+                    await send_message(chat_id, "Request timeout. Please try again.")
                 except Exception as e:
-                    await edit_message(chat_id, msg_id, f"An error occurred: {str(e)}")
+                    await send_message(chat_id, f"An error occurred: {str(e)}")
+
                 return JSONResponse({"ok": True})
 
             if text.startswith("/imagine"):
@@ -128,18 +135,17 @@ async def webhook(request: Request):
         thinking = await send_message(chat_id, "🤖 GPT-4 is preparing a response... Please wait.")
         if not thinking.get("ok"):
             return JSONResponse({"ok": True})
-        msg_id = thinking["result"]["message_id"]
+
         try:
             result = await ask_chatgpt(query)
             if result:
-                ai_response = result
-                await edit_message(chat_id, msg_id, ai_response)
+                await send_message(chat_id, result)
             else:
-                await edit_message(chat_id, msg_id, "Error fetching response from ChatGPT API.")
+                await send_message(chat_id, "Error fetching response from ChatGPT API.")
         except httpx.TimeoutException:
-            await edit_message(chat_id, msg_id, "Request timeout. Please try again.")
+            await send_message(chat_id, "Request timeout. Please try again.")
         except Exception as e:
-            await edit_message(chat_id, msg_id, f"An error occurred: {str(e)}")
+            await send_message(chat_id, f"An error occurred: {str(e)}")
 
         return JSONResponse({"ok": True})
 
