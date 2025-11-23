@@ -8,7 +8,7 @@ app = FastAPI()
 BOT_TOKEN = "8424346441:AAF7YxEtUeKvuNZ_nqGpEG2XVCwhhXBqFxU"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 PERPLEXITY_API = "https://perplex-city.vercel.app/search"
-CHATGPT_API = "https://gpt4.apisimpacientes.workers.dev/?message="
+CHATGPT_API = "https://text.pollinations.ai/"  # changed endpoint base
 GEMINI_IMAGE_API = "https://gemini-image-generator-api.vercel.app/?prompt="
 
 async def send_message(chat_id: int, text: str, parse_mode: str = "Markdown"):
@@ -54,7 +54,7 @@ async def ask_chatgpt(query: str):
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(url)
         if response.status_code == 200:
-            return response.json()
+            return response.text
         return None
 
 @app.get("/")
@@ -125,14 +125,14 @@ async def webhook(request: Request):
             return JSONResponse({"ok": True})
 
         query = text.strip()
-        thinking = await send_message(chat_id, "🤖 Thinking... Please wait.")
+        thinking = await send_message(chat_id, "🤖 GPT-4 is preparing a response... Please wait.")
         if not thinking.get("ok"):
             return JSONResponse({"ok": True})
         msg_id = thinking["result"]["message_id"]
         try:
             result = await ask_chatgpt(query)
-            if result and "response" in result:
-                ai_response = result["response"]
+            if result:
+                ai_response = result
                 await edit_message(chat_id, msg_id, ai_response)
             else:
                 await edit_message(chat_id, msg_id, "Error fetching response from ChatGPT API.")
