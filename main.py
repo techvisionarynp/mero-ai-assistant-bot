@@ -9,7 +9,6 @@ BOT_TOKEN = "8424346441:AAF7YxEtUeKvuNZ_nqGpEG2XVCwhhXBqFxU"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 FELO_AI_API = "https://yabes-api.pages.dev/api/ai/chat/felo-ai?query="
 CHATGPT_API = "https://text.pollinations.ai/"
-GEMINI_IMAGE_API = "https://gemini-image-generator-api.vercel.app/?prompt="
 
 async def send_message(chat_id: int, text: str, parse_mode: str = "Markdown"):
     url = f"{TELEGRAM_API}/sendMessage"
@@ -35,7 +34,6 @@ async def search_felo_ai(query: str):
         if response.status_code == 200:
             data = response.json()
             results_text = data.get('results', '')
-
             if "📚 References:" in results_text:
                 news_part, references_part = results_text.split("📚 References:")
                 news_part = news_part.strip()
@@ -44,7 +42,6 @@ async def search_felo_ai(query: str):
             else:
                 news_part = results_text
                 references_part = []
-
             return news_part, references_part
         return None, None
 
@@ -67,15 +64,11 @@ async def webhook(request: Request):
         data = await request.json()
         if "message" not in data:
             return JSONResponse({"ok": True})
-
         message = data["message"]
         chat_id = message["chat"]["id"]
-
         if "text" not in message:
             return JSONResponse({"ok": True})
-
         text = message["text"]
-
         if text == "/start":
             welcome = (
                 "👋 Welcome to *Mero AI Assistant!*\n\n"
@@ -87,16 +80,13 @@ async def webhook(request: Request):
             )
             await send_message(chat_id, welcome)
             return JSONResponse({"ok": True})
-
         if text.startswith("/"):
             if text.startswith("/search"):
                 query = text.replace("/search", "", 1).strip()
                 if not query:
                     await send_message(chat_id, "Please provide something to search.")
                     return JSONResponse({"ok": True})
-
                 await send_message(chat_id, "🔍 Searching... Please wait.")
-
                 try:
                     news, references = await search_felo_ai(query)
                     if news:
@@ -116,26 +106,37 @@ async def webhook(request: Request):
                     await send_message(chat_id, "Request timeout. Please try again.")
                 except Exception as e:
                     await send_message(chat_id, f"An error occurred: {str(e)}")
-
                 return JSONResponse({"ok": True})
-
             if text.startswith("/imagine"):
                 prompt = text.replace("/imagine", "", 1).strip()
                 if not prompt:
                     await send_message(chat_id, "Please provide a description to generate an image.")
                     return JSONResponse({"ok": True})
                 await send_message(chat_id, "🎨 Generating your AI image... Please wait.")
-                image_url = f"{GEMINI_IMAGE_API}{urllib.parse.quote(prompt)}"
-                await send_photo(chat_id, image_url, "Here's your AI image is generated.")
+                encoded_prompt = urllib.parse.quote(prompt)
+                image_api_url = f"https://yabes-api.pages.dev/api/ai/image/imagen3-0?prompt={encoded_prompt}&ratio=16%3A9"
+                try:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        response = await client.get(image_api_url)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("success") and "url" in data:
+                                image_url = data["url"]
+                                await send_photo(chat_id, image_url, "Here’s your AI-generated image.")
+                            else:
+                                await send_message(chat_id, "Error: Image API did not return a valid URL.")
+                        else:
+                            await send_message(chat_id, f"Error: Image API returned status {response.status_code}.")
+                except httpx.TimeoutException:
+                    await send_message(chat_id, "Request timeout. Please try again.")
+                except Exception as e:
+                    await send_message(chat_id, f"An error occurred: {str(e)}")
                 return JSONResponse({"ok": True})
-
             return JSONResponse({"ok": True})
-
         query = text.strip()
         thinking = await send_message(chat_id, "🤖 GPT-4 is preparing a response... Please wait.")
         if not thinking.get("ok"):
             return JSONResponse({"ok": True})
-
         try:
             result = await ask_chatgpt(query)
             if result:
@@ -146,9 +147,7 @@ async def webhook(request: Request):
             await send_message(chat_id, "Request timeout. Please try again.")
         except Exception as e:
             await send_message(chat_id, f"An error occurred: {str(e)}")
-
         return JSONResponse({"ok": True})
-
     except Exception as e:
         print(f"Error: {str(e)}")
         return JSONResponse({"ok": True})
